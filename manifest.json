@@ -1,0 +1,10 @@
+{
+  "name": "五線タッチチャレンジ",
+  "short_name": "五線タッチ",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fff7fb",
+  "theme_color": "#fff7fb",
+  "orientation": "landscape",
+  "description": "子ども向け五線譜・譜読みタッチトレーニング"
+}

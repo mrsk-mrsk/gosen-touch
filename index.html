@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="五線タッチ">
+<meta name="theme-color" content="#fff7fb">
+<link rel="manifest" href="manifest.json">
+<title>五線タッチチャレンジ｜レベル練習</title>
+<style>
+html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+*{box-sizing:border-box}
+body{margin:0;background:#fff7fb;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP",sans-serif;color:#333;text-align:center}
+.wrap{max-width:980px;margin:auto;padding:18px 14px}
+h1{font-size:26px;margin:4px 0 14px}
+.panel{background:white;border-radius:20px;padding:14px;box-shadow:0 4px 18px #00000012}
+.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
+button,select{font-size:16px;border:0;border-radius:12px;padding:10px 13px;background:#eee;cursor:pointer}
+button.active{background:#333;color:#fff}
+.start{background:#ff8fb3;color:white;font-weight:bold;padding:12px 24px}
+.status{display:flex;justify-content:center;gap:24px;font-size:18px;font-weight:bold;margin:10px}
+.question{font-size:27px;font-weight:bold;min-height:48px}
+.hint{font-size:14px;color:#777;min-height:22px}
+svg{width:100%;height:auto;display:block;margin:8px auto;touch-action:manipulation}
+.note{cursor:pointer}
+.note ellipse{stroke:#333;stroke-width:2}
+.note text{pointer-events:none;font-size:14px}
+.feedback{font-size:20px;font-weight:bold;min-height:30px}
+.good{color:#28a745}.bad{color:#e04b5a}
+.levelbox{margin:8px 0;font-size:15px;color:#555}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🎹 五線タッチチャレンジ</h1>
+<div class="panel">
+  <div class="controls">
+    <button class="lv active" data-lv="1">Lv.1 線だけ</button>
+    <button class="lv" data-lv="2">Lv.2 間だけ</button>
+    <button class="lv" data-lv="3">Lv.3 線＋間</button>
+    <button class="lv" data-lv="4">Lv.4 2秒チャレンジ</button>
+  </div>
+  <div class="controls">
+    <label>音符色
+      <select id="color">
+        <option value="black">黒</option><option value="blue">青</option>
+        <option value="red">赤</option><option value="pink">ピンク</option>
+        <option value="green">緑</option><option value="yellow">黄色</option>
+        <option value="purple">紫</option><option value="random">ランダム</option>
+      </select>
+    </label>
+    <label>ふりがな
+      <select id="ruby"><option value="on">ON</option><option value="off">OFF</option></select>
+    </label>
+    <label>全体時間
+      <select id="duration"><option value="10">10秒</option><option value="30" selected>30秒</option><option value="60">60秒</option></select>
+    </label>
+  </div>
+  <div class="levelbox" id="levelText">Lv.1：線の音符だけをタッチ</div>
+  <div class="status"><span>残り <b id="time">30</b>秒</span><span>正解 <b id="score">0</b></span><span>回答 <b id="count">0</b></span></div>
+  <div class="question" id="question">スタートを押してね</div>
+  <div class="hint" id="hint">正しい音符をタッチ！</div>
+
+  <svg id="staff" viewBox="0 0 900 230" aria-label="五線譜">
+    <g id="lines"></g>
+    <g id="notes"></g>
+  </svg>
+
+  <div class="feedback" id="feedback"></div>
+  <button class="start" id="start">スタート</button>
+</div>
+</div>
+
+<script>
+const svg=document.getElementById('staff');
+const lines=document.getElementById('lines');
+const notes=document.getElementById('notes');
+const question=document.getElementById('question');
+const hint=document.getElementById('hint');
+const feedback=document.getElementById('feedback');
+const startBtn=document.getElementById('start');
+const timeEl=document.getElementById('time');
+const scoreEl=document.getElementById('score');
+const countEl=document.getElementById('count');
+const colorSel=document.getElementById('color');
+const rubySel=document.getElementById('ruby');
+const durationSel=document.getElementById('duration');
+const levelText=document.getElementById('levelText');
+
+const xs=[120,202,284,366,448,530,612,694,776];
+// 5線: y=90,114,138,162,186
+// 音符: 第1線→186, 第1間→174, 第2線→162 ... 第5線→90
+const ys=[186,174,162,150,138,126,114,102,90];
+const all=[
+ {label:'第1線',ruby:'だいいっせん',type:'line',i:0},
+ {label:'第1間',ruby:'だいいっかん',type:'space',i:1},
+ {label:'第2線',ruby:'だいにせん',type:'line',i:2},
+ {label:'第2間',ruby:'だいにかん',type:'space',i:3},
+ {label:'第3線',ruby:'だいさんせん',type:'line',i:4},
+ {label:'第3間',ruby:'だいさんかん',type:'space',i:5},
+ {label:'第4線',ruby:'だいよんせん',type:'line',i:6},
+ {label:'第4間',ruby:'だいよんかん',type:'space',i:7},
+ {label:'第5線',ruby:'だいごせん',type:'line',i:8}
+];
+const palette=['#222','#1976d2','#e53935','#ec6b9a','#35a853','#e0a800','#7b4ab7'];
+let level=1,running=false,timeLeft=30,score=0,count=0,target=null,timer=null,questionTimer=null,questionStarted=0;
+
+function drawStaff(){
+ lines.innerHTML='';
+ for(let y=90;y<=186;y+=24){
+   const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+   l.setAttribute('x1',70);l.setAttribute('x2',830);l.setAttribute('y1',y);l.setAttribute('y2',y);
+   l.setAttribute('stroke','#555');l.setAttribute('stroke-width','3');
+   lines.appendChild(l);
+ }
+}
+function activeItems(){
+ if(level===1)return all.filter(x=>x.type==='line');
+ if(level===2)return all.filter(x=>x.type==='space');
+ return all;
+}
+function noteColor(i){
+ const v=colorSel.value;
+ if(v==='random') return palette[i%palette.length];
+ return {black:'#222',blue:'#1976d2',red:'#e53935',pink:'#ec6b9a',green:'#35a853',yellow:'#e0a800',purple:'#7b4ab7'}[v];
+}
+function drawNotes(){
+ notes.innerHTML='';
+ activeItems().forEach(item=>{
+   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+   g.classList.add('note');
+   g.dataset.label=item.label;
+   const x=xs[item.i], y=ys[item.i];
+   // 全音符：棒を付けず、楕円の「丸」だけを表示
+   const e=document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+   e.setAttribute('cx',x);e.setAttribute('cy',y);e.setAttribute('rx','18');e.setAttribute('ry','12');
+   e.setAttribute('fill',noteColor(item.i));
+   e.setAttribute('stroke',noteColor(item.i));
+   e.setAttribute('stroke-width','4');
+   e.setAttribute('transform',`rotate(-18 ${x} ${y})`);
+   g.appendChild(e);
+   g.addEventListener('pointerdown',()=>answer(item));
+   notes.appendChild(g);
+ });
+}
+function showQuestion(){
+ if(!running)return;
+ clearTimeout(questionTimer);
+ const items=activeItems();
+ target=items[Math.floor(Math.random()*items.length)];
+ const label=rubySel.value==='on'
+   ? `<ruby>${target.label}<rt>${target.ruby}</rt></ruby>` : target.label;
+ question.innerHTML=label+'をタッチ！';
+ questionStarted=performance.now();
+ if(level===4){
+   hint.textContent='⚡ 2秒以内に答えよう！';
+   questionTimer=setTimeout(()=>{
+     if(running && target){
+       playWrong();
+       feedback.textContent='時間切れ！';
+       feedback.className='feedback bad';
+       count++;
+       countEl.textContent=count;
+       target=null;
+       setTimeout(()=>{feedback.textContent='';feedback.className='feedback';showQuestion()},220);
+     }
+   },2000);
+ }else hint.textContent='正しい音符をタッチ！';
+}
+function answer(item){
+ if(!running || !target)return;
+ const elapsed=performance.now()-questionStarted;
+ if(level===4 && elapsed>2000)return;
+ clearTimeout(questionTimer);
+ count++;countEl.textContent=count;
+ if(item.label===target.label){
+   score++;scoreEl.textContent=score;
+   feedback.textContent='⭕ 正解！';feedback.className='feedback good';playCorrect();
+ }else{
+   feedback.textContent='❌ ちがうよ';feedback.className='feedback bad';playWrong();
+ }
+ target=null;
+ setTimeout(()=>{feedback.textContent='';feedback.className='feedback';showQuestion()},220);
+}
+function start(){
+ clearInterval(timer);clearTimeout(questionTimer);
+ running=true;timeLeft=Number(durationSel.value);score=0;count=0;
+ timeEl.textContent=timeLeft;scoreEl.textContent=0;countEl.textContent=0;
+ startBtn.textContent='もう一度スタート';
+ drawStaff();drawNotes();showQuestion();
+ timer=setInterval(()=>{
+   timeLeft--;timeEl.textContent=timeLeft;
+   if(timeLeft<=0)end();
+ },1000);
+}
+function end(){
+ running=false;clearInterval(timer);clearTimeout(questionTimer);target=null;
+ question.innerHTML='終了！';
+ hint.textContent=`正解 ${score} / ${count} 問`;
+ feedback.textContent='おつかれさま！';feedback.className='feedback good';
+ playFinish();
+}
+function updateLevel(){
+ level=Number(document.querySelector('.lv.active').dataset.lv);
+ levelText.textContent=[
+   '', 'Lv.1：線の音符だけをタッチ',
+   'Lv.2：間の音符だけをタッチ',
+   'Lv.3：線と間、両方から探す',
+   'Lv.4：⚡ 1問2秒以内！'
+ ][level];
+ drawStaff();drawNotes();
+ if(running)showQuestion();
+}
+document.querySelectorAll('.lv').forEach(b=>b.addEventListener('click',()=>{
+ document.querySelectorAll('.lv').forEach(x=>x.classList.remove('active'));
+ b.classList.add('active');updateLevel();
+}));
+colorSel.addEventListener('change',drawNotes);
+rubySel.addEventListener('change',()=>{if(running)showQuestion()});
+startBtn.addEventListener('click',start);
+
+let audioCtx;
+function tone(freq,dur,delay=0){
+ try{
+  audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.frequency.value=freq;o.type='sine';g.gain.setValueAtTime(.0001,audioCtx.currentTime+delay);
+  g.gain.exponentialRampToValueAtTime(.13,audioCtx.currentTime+delay+.01);
+  g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+delay+dur);
+  o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+delay);o.stop(audioCtx.currentTime+delay+dur+.02);
+ }catch(e){}
+}
+function playCorrect(){tone(660,.12);tone(880,.15,.09)}
+function playWrong(){tone(180,.18)}
+function playFinish(){tone(523,.12);tone(659,.12,.1);tone(784,.18,.2)}
+
+drawStaff();drawNotes();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
